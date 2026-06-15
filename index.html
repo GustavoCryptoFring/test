@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>Ninja Parkour — карты и текстуры</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
+<script src="map.js"></script>
 <style>
   html, body { margin:0; padding:0; height:100%; background:#8ed6ff; overflow:hidden;
     font-family:system-ui, sans-serif; -webkit-user-select:none; user-select:none; }
@@ -39,89 +40,10 @@ const DESIGN_W = 800, DESIGN_H = 450;
 const SPEED = 240, JUMP = 560, GRAVITY = 1300, MAX_JUMPS = 2;
 
 // ===========================================================================
-//  ХЕЛПЕРЫ ДЛЯ ПОСТРОЕНИЯ КАРТ
+//  КАРТЫ грузятся из отдельного файла map.js (он подключён в <head>).
+//  Чтобы сменить карту — меняешь содержимое map.js (вставляешь туда экспорт
+//  из редактора). Формат map.js: const MAPS = [ {...} ];
 // ===========================================================================
-
-// Плавный диагональный подъём: ряд маленьких платформ вдоль линии (x1,y1)->(x2,y2).
-// Выглядит как пологий склон, работает на обычной физике.
-function buildRamp(x1, y1, x2, y2, count, w, h) {
-  const arr = [];
-  for (let i = 0; i < count; i++) {
-    const t = count === 1 ? 0 : i / (count - 1);
-    arr.push({ x: x1 + (x2 - x1) * t - w / 2, y: y1 + (y2 - y1) * t, w, h });
-  }
-  return arr;
-}
-
-// Автогенератор "лесенки" (для быстрых тестовых карт).
-function buildClimb(width, bottomY, topY, step, withFloor) {
-  const arr = [];
-  if (withFloor) arr.push({ x: 0, y: bottomY, w: width, h: 50 });
-  else           arr.push({ x: width/2 - 100, y: bottomY, w: 200, h: 24 });
-  let prevX = width/2, i = 1;
-  for (let y = bottomY - step; y > topY + 80; y -= step) {
-    const dir = (i % 2 === 0) ? 1 : -1;
-    const dx = dir * (70 + (i * 23) % 80);
-    const w = 110 + (i * 17) % 45;
-    arr.push({ x: Phaser.Math.Clamp(prevX + dx, 30, width - w - 30), y, w, h: 22 });
-    prevX = arr[arr.length - 1].x; i++;
-  }
-  arr.push({ x: width/2 - 110, y: topY + 30, w: 220, h: 24, goal: true });
-  return arr;
-}
-
-// ===========================================================================
-//  КАРТЫ  (тут ты строишь свои уровни)
-//
-//  Платформа: { x, y, w, h }            x,y = левый верхний угол
-//             добавь goal:true          -> финишная площадка (с флагом)
-//             добавь tex:'ключ'         -> платформа из твоей текстуры
-//  deathY: число -> упал ниже = респавн;  null -> зоны смерти нет.
-// ===========================================================================
-const MAPS = [
-
-  // ----- КАРТА-ШАБЛОН: смотри сюда как на образец и копируй -----
-  {
-    name: 'Моя карта (шаблон)',
-    width: 880, height: 3000,
-    spawn: { x: 140, y: 2830 },
-    goalY: 400,                 // поднялся выше = победа
-    deathY: 2950,               // внизу зона смерти
-    platforms: [
-      { x: 40, y: 2870, w: 260, h: 26 },                       // стартовая площадка
-      ...buildRamp(360, 2820, 700, 2520, 6, 90, 18),           // ПЛАВНЫЙ подъём по диагонали
-      { x: 700, y: 2420, w: 140, h: 22, tex: 'sushi' },        // платформа из текстуры 'sushi'
-      { x: 520, y: 2280, w: 120, h: 20, tex: 'chopstick' },    // из текстуры 'chopstick'
-      { x: 330, y: 2140, w: 120, h: 20 },                      // обычная платформа
-      ...buildRamp(300, 2090, 640, 1820, 6, 90, 18),
-      { x: 640, y: 1720, w: 140, h: 22, tex: 'cup' },
-      { x: 440, y: 1580, w: 130, h: 22 },
-      { x: 240, y: 1440, w: 120, h: 22 },
-      { x: 450, y: 1290, w: 120, h: 22 },
-      { x: 640, y: 1140, w: 120, h: 22 },
-      { x: 430, y: 990,  w: 120, h: 22 },
-      { x: 240, y: 840,  w: 120, h: 22 },
-      { x: 450, y: 690,  w: 120, h: 22 },
-      { x: 600, y: 540,  w: 120, h: 22 },
-      { x: 360, y: 380,  w: 200, h: 26, goal: true },          // финиш
-    ],
-    hazards: [ { x: 480, y: 2230 } ],                          // сюрикен-ловушка
-  },
-
-  // ----- Тестовые автогенерируемые карты -----
-  {
-    name: 'Восхождение', width: 880, height: 4300,
-    spawn: { x: 440, y: 4080 }, goalY: 220, deathY: 4220,
-    platforms: buildClimb(880, 4100, 200, 130, false),
-    hazards: [ { x: 300, y: 3550 }, { x: 560, y: 2800 } ],
-  },
-  {
-    name: 'Без дна', width: 880, height: 4300,
-    spawn: { x: 440, y: 4040 }, goalY: 220, deathY: null,
-    platforms: buildClimb(880, 4100, 200, 135, true),
-    hazards: [],
-  },
-];
 
 let currentMap = 0;  // активная карта (на финише сама переходит к следующей; клавиши 1/2/3 — вручную)
 
@@ -233,8 +155,8 @@ class Game extends Phaser.Scene {
     const p = this.player, k = this.keys, map = this.map;
 
     if (Phaser.Input.Keyboard.JustDown(k.ONE))   { currentMap = 0; this.scene.restart(); return; }
-    if (Phaser.Input.Keyboard.JustDown(k.TWO))   { currentMap = 1; this.scene.restart(); return; }
-    if (Phaser.Input.Keyboard.JustDown(k.THREE)) { currentMap = 2; this.scene.restart(); return; }
+    if (Phaser.Input.Keyboard.JustDown(k.TWO)   && MAPS[1]) { currentMap = 1; this.scene.restart(); return; }
+    if (Phaser.Input.Keyboard.JustDown(k.THREE) && MAPS[2]) { currentMap = 2; this.scene.restart(); return; }
 
     const left  = controls.left  || k.A.isDown || k.LEFT.isDown;
     const right = controls.right || k.D.isDown || k.RIGHT.isDown;
