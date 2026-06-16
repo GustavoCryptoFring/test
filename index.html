@@ -37,7 +37,7 @@
 //  ФИЗИКА
 // ===========================================================================
 const DESIGN_W = 800, DESIGN_H = 450;
-const SPEED = 240, JUMP = 560, GRAVITY = 1300, MAX_JUMPS = 2;
+const SPEED = 240, JUMP = 560, GRAVITY = 1300, MAX_JUMPS = 1;
 
 // ===========================================================================
 //  КАРТЫ грузятся из отдельного файла map.js (он подключён в <head>).
@@ -49,6 +49,17 @@ let currentMap = 0;  // активная карта (на финише сама 
 
 // ===========================================================================
 let controls = { left:false, right:false, jump:false };
+
+// Авто-границы зоны: считаются по самим объектам + запас по краям.
+// Никакого жёсткого размера карты — играешь там, где есть платформы.
+function playBounds(m){
+  let L=1e9,T=1e9,R=-1e9,B=-1e9;
+  (m.platforms||[]).forEach(p=>{ L=Math.min(L,p.x); T=Math.min(T,p.y); R=Math.max(R,p.x+p.w); B=Math.max(B,p.y+p.h); });
+  L=Math.min(L,m.spawn.x); R=Math.max(R,m.spawn.x); T=Math.min(T,m.spawn.y); B=Math.max(B,m.spawn.y);
+  if(!isFinite(L)){ L=0;T=0;R=m.width||1000;B=m.height||1000; }
+  const PX=320, PT=320, PB=220;   // запас по краям, чтобы граница не была резкой
+  return { left:L-PX, top:T-PT, right:R+PX, bottom:B+PB };
+}
 
 class Game extends Phaser.Scene {
 
@@ -77,17 +88,18 @@ class Game extends Phaser.Scene {
     const map = MAPS[currentMap];
     this.map = map;
 
-    this.physics.world.setBounds(0, -300, map.width, map.height + 600);
-    this.cameras.main.setBounds(0, 0, map.width, map.height);
+    const PB = playBounds(map); this.pb = PB;
+    this.physics.world.setBounds(PB.left, PB.top - 200, PB.right - PB.left, (PB.bottom - PB.top) + 600);
+    this.cameras.main.setBounds(PB.left, PB.top, PB.right - PB.left, PB.bottom - PB.top);
     this.cameras.main.setBackgroundColor('#8ed6ff');
 
-    for (let i = 0; i < 26; i++) {
-      this.add.image(Phaser.Math.Between(0, map.width), Phaser.Math.Between(100, map.height), 'cloud')
+    for (let i = 0; i < 30; i++) {
+      this.add.image(Phaser.Math.Between(PB.left, PB.right), Phaser.Math.Between(PB.top, PB.bottom), 'cloud')
         .setScrollFactor(0.5).setAlpha(0.85).setScale(Phaser.Math.FloatBetween(0.7, 1.7));
     }
 
     if (map.deathY !== null) {
-      this.add.tileSprite(0, map.deathY, map.width, map.height - map.deathY + 200, 'water')
+      this.add.tileSprite(PB.left, map.deathY, PB.right - PB.left, PB.bottom - map.deathY + 200, 'water')
         .setOrigin(0, 0).setDepth(-1);
     }
 
@@ -175,7 +187,7 @@ class Game extends Phaser.Scene {
     if (wantJump && this.jumpsLeft > 0) { p.setVelocityY(-JUMP); this.jumpsLeft--; }
 
     if (map.deathY !== null && p.y > map.deathY) this.respawn();
-    if (p.y > map.height + 400) this.respawn();
+    if (p.y > this.pb.bottom + 400) this.respawn();
 
     if (p.y <= map.goalY) { this.win(); return; }
 
