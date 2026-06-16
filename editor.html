@@ -97,6 +97,7 @@
 <div id="test">
   <button id="back">← Редактор</button>
   <div id="game"></div>
+  <div id="test-err" style="position:absolute;top:54px;left:12px;right:12px;color:#fff;background:rgba(150,30,40,.92);padding:10px 12px;border-radius:8px;font-family:monospace;font-size:13px;white-space:pre-wrap;display:none;z-index:70;"></div>
   <div id="tl" class="tbtn">◀</div><div id="tr" class="tbtn">▶</div><div id="tj" class="tbtn">JUMP</div>
 </div>
 
@@ -319,7 +320,7 @@ document.getElementById('io-load').onclick=()=>{ let t=document.getElementById('
 let game=null, tctrl={left:false,right:false,jump:false}, testMap=null;
 class TestScene extends Phaser.Scene{ constructor(){ super('test'); }
   preload(){ OBJECTS.forEach(o=>{ if(o.src) this.load.image(o.tex,o.src+'?t='+Date.now()); }); }
-  create(){ this.m=testMap; const g=this.make.graphics({add:false});
+  create(){ try{ this.m=testMap; const g=this.make.graphics({add:false});
     g.fillStyle(0x2f2f45).fillRoundedRect(2,8,24,22,6); g.fillStyle(0xe8e8ef).fillRect(5,15,18,5);
     g.fillStyle(0x57c23a).fillRect(7,2,3,8).fillRect(15,2,3,8); g.generateTexture('nj',28,32); g.destroy();
     const m=this.m; this.physics.world.setBounds(0,-300,m.width,m.height+600);
@@ -337,7 +338,7 @@ class TestScene extends Phaser.Scene{ constructor(){ super('test'); }
     this.physics.add.collider(this.pl,this.solids); this.physics.add.overlap(this.pl,this.hz,()=>this.resp());
     this.cameras.main.startFollow(this.pl,true,0.12,0.14); this.cameras.main.setDeadzone(160,90);
     this.k=this.input.keyboard.addKeys('W,A,S,D,SPACE,UP,LEFT,RIGHT'); this.jl=PH.MAX_JUMPS;
-    this.ui=this.add.text(10,8,'',{fontFamily:'monospace',fontSize:'18px',color:'#fff',stroke:'#1c2a40',strokeThickness:4}).setScrollFactor(0); }
+    this.ui=this.add.text(10,8,'',{fontFamily:'monospace',fontSize:'18px',color:'#fff',stroke:'#1c2a40',strokeThickness:4}).setScrollFactor(0); }catch(e){ showTestError(e); } }
   resp(){ this.pl.setPosition(this.m.spawn.x,this.m.spawn.y); this.pl.setVelocity(0,0); this.jl=PH.MAX_JUMPS; }
   update(){ const p=this.pl,k=this.k,m=this.m; const L=tctrl.left||k.A.isDown||k.LEFT.isDown,R=tctrl.right||k.D.isDown||k.RIGHT.isDown;
     p.setVelocityX(L&&!R?-PH.SPEED:R&&!L?PH.SPEED:0); if(p.body.blocked.down)this.jl=PH.MAX_JUMPS;
@@ -345,7 +346,10 @@ class TestScene extends Phaser.Scene{ constructor(){ super('test'); }
     if(wj&&this.jl>0){ p.setVelocityY(-PH.JUMP); this.jl--; }
     if(m.deathY!=null&&p.y>m.deathY)this.resp(); if(p.y>m.height+400)this.resp();
     this.ui.setText('↑ '+Math.max(0,Math.floor((m.spawn.y-p.y)/32))+' м'+(p.y<=m.goalY?'   ВЕРШИНА!':'')); } }
-document.getElementById('b-test').onclick=()=>{ testMap=M(); document.getElementById('test').style.display='block';
+function showTestError(e){ const d=document.getElementById('test-err'); d.style.display='block';
+  d.textContent='Ошибка в тесте:\n'+(e&&e.message?e.message:e)+'\n'+((e&&e.stack)?e.stack.split('\n').slice(0,3).join('\n'):''); console.error(e); }
+window.addEventListener('error',ev=>{ if(document.getElementById('test').style.display==='block') showTestError(ev.error||ev.message); });
+document.getElementById('b-test').onclick=()=>{ testMap=M(); document.getElementById('test-err').style.display='none'; document.getElementById('test').style.display='block';
   game=new Phaser.Game({ type:Phaser.AUTO,parent:'game',width:window.innerWidth,height:window.innerHeight,pixelArt:true,
     scale:{mode:Phaser.Scale.RESIZE}, physics:{default:'arcade',arcade:{gravity:{y:PH.GRAVITY}}}, scene:[TestScene] }); };
 document.getElementById('back').onclick=()=>{ if(game){ game.destroy(true); game=null; } document.getElementById('test').style.display='none'; };
