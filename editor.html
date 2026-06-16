@@ -80,6 +80,7 @@
     <div id="sel-props" style="display:none;">
       <div class="row"><div><label>X</label><input id="p-x" type="number" /></div><div><label>Y</label><input id="p-y" type="number" /></div></div>
       <div class="row"><div><label>Ширина</label><input id="p-w" type="number" /></div><div><label>Высота</label><input id="p-h" type="number" /></div></div>
+      <label>Поворот (°)</label><input id="p-angle" type="number" />
       <label>Текстура (tex)</label>
       <select id="p-tex"><option value="">— земля/трава —</option><option value="sushi">sushi</option><option value="chopstick">chopstick</option><option value="bamboo">bamboo</option><option value="bowl">bowl</option><option value="cup">cup</option><option value="coin">coin</option><option value="umbrella">umbrella</option><option value="mask">mask</option><option value="lantern">lantern</option></select>
       <label><input id="p-oneway" type="checkbox" style="width:auto;" /> проходима снизу (платформа — можно запрыгнуть)</label>
@@ -195,19 +196,20 @@ function draw(){
   const decor=m.platforms.filter(p=>p.decor), plats=m.platforms.filter(p=>!p.decor);
   decor.forEach(p=>{ let [sx,sy]=toScreen(p.x,p.y); const w=p.w*view.zoom,h=p.h*view.zoom;
     const img=p.tex&&imgCache[p.tex];
-    ctx.globalAlpha=0.7;
-    if(img) ctx.drawImage(img,sx,sy,w,h); else { ctx.fillStyle=colorOf(p); ctx.fillRect(sx,sy,w,h); }
-    ctx.globalAlpha=1;
-    ctx.setLineDash([4,3]); ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1; ctx.strokeRect(sx,sy,w,h); ctx.setLineDash([]);
+    ctx.save(); ctx.translate(sx+w/2,sy+h/2); if(p.angle) ctx.rotate(p.angle*Math.PI/180); ctx.globalAlpha=0.7;
+    if(img) ctx.drawImage(img,-w/2,-h/2,w,h); else { ctx.fillStyle=colorOf(p); ctx.fillRect(-w/2,-h/2,w,h); }
+    ctx.globalAlpha=1; ctx.setLineDash([4,3]); ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1; ctx.strokeRect(-w/2,-h/2,w,h); ctx.setLineDash([]); ctx.restore();
     if(p===sel){ ctx.strokeStyle='#8b5cf6'; ctx.lineWidth=2; ctx.strokeRect(sx-1,sy-1,w+2,h+2); } });
 
   plats.forEach(p=>{ let [sx,sy]=toScreen(p.x,p.y); const w=p.w*view.zoom,h=p.h*view.zoom;
     const img=p.tex&&imgCache[p.tex];
-    if(img){ ctx.drawImage(img,sx,sy,w,h); }
-    else { ctx.fillStyle=colorOf(p); ctx.fillRect(sx,sy,w,h); }
-    if(p.oneway||p.goal){ ctx.fillStyle=p.goal?'#caa414':'#7ad94f'; ctx.fillRect(sx,sy,w,Math.max(2,3*view.zoom)); }  // зелёная кромка = можно запрыгнуть снизу
+    ctx.save(); ctx.translate(sx+w/2,sy+h/2); if(p.angle) ctx.rotate(p.angle*Math.PI/180);
+    if(img){ ctx.drawImage(img,-w/2,-h/2,w,h); }
+    else { ctx.fillStyle=colorOf(p); ctx.fillRect(-w/2,-h/2,w,h); }
+    if(p.oneway||p.goal){ ctx.fillStyle=p.goal?'#caa414':'#7ad94f'; ctx.fillRect(-w/2,-h/2,w,Math.max(2,3*view.zoom)); }
+    ctx.restore();
     if(p===sel){ ctx.strokeStyle='#4f8cff'; ctx.lineWidth=2; ctx.strokeRect(sx-1,sy-1,w+2,h+2); }
-    if(!img && p.tex && view.zoom>0.3){ ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillText(p.tex,sx+3,sy+h-3); } });
+    if(!img && p.tex && view.zoom>0.3 && !p.angle){ ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillText(p.tex,sx+3,sy+h-3); } });
 
   // ловушки
   ctx.fillStyle='#ff4444';
@@ -286,7 +288,7 @@ document.getElementById('zfit').onclick=()=>{ view.zoom=Math.min((cv.height-2*PA
 function selectPlat(p){ sel=p; document.getElementById('sel-empty').style.display=p?'none':'block';
   document.getElementById('sel-props').style.display=p?'block':'none'; if(p)syncPanel(); }
 function syncPanel(){ if(!sel)return; p_x.value=sel.x;p_y.value=sel.y;p_w.value=sel.w;p_h.value=sel.h;
-  document.getElementById('p-tex').value=sel.tex||''; document.getElementById('p-goal').checked=!!sel.goal; document.getElementById('p-decor').checked=!!sel.decor; document.getElementById('p-oneway').checked=!!sel.oneway;
+  document.getElementById('p-tex').value=sel.tex||''; document.getElementById('p-goal').checked=!!sel.goal; document.getElementById('p-decor').checked=!!sel.decor; document.getElementById('p-oneway').checked=!!sel.oneway; document.getElementById('p-angle').value=sel.angle||0;
   const r=document.getElementById('reach');
   if(sel.decor){ r.className='hint'; r.textContent='Декорация — без столкновения, прыжок не проверяется.'; return; }
   const below=M().platforms.filter(o=>o!==sel&&!o.decor&&o.y>sel.y&&Math.abs((o.x+o.w/2)-(sel.x+sel.w/2))<280).sort((a,b)=>a.y-b.y)[0];
@@ -301,6 +303,7 @@ const p_x=document.getElementById('p-x'),p_y=document.getElementById('p-y'),p_w=
 document.getElementById('p-tex').onchange=e=>{ if(sel)sel.tex=e.target.value||undefined; };
 document.getElementById('p-goal').onchange=e=>{ if(sel)sel.goal=e.target.checked||undefined; };
 document.getElementById('p-oneway').onchange=e=>{ if(sel)sel.oneway=e.target.checked||undefined; };
+document.getElementById('p-angle').oninput=e=>{ if(sel)sel.angle=(+e.target.value)||undefined; };
 document.getElementById('p-decor').onchange=e=>{ if(sel){ sel.decor=e.target.checked||undefined; syncPanel(); } };
 document.getElementById('p-del').onclick=()=>{ if(sel){ M().platforms.splice(M().platforms.indexOf(sel),1); selectPlat(null); } };
 
@@ -324,7 +327,7 @@ document.getElementById('m-del').onclick=()=>{ if(maps.length<2){ alert('Нел�
 
 // ===== ЭКСПОРТ / ИМПОРТ =====
 function mapToText(m){ const plats=m.platforms.map(p=>{ let s=`    { x:${p.x}, y:${p.y}, w:${p.w}, h:${p.h}`;
-  if(p.tex)s+=`, tex:'${p.tex}'`; if(p.decor)s+=`, decor:true`; if(p.oneway)s+=`, oneway:true`; if(p.goal)s+=`, goal:true`; return s+' }'; }).join(',\n');
+  if(p.tex)s+=`, tex:'${p.tex}'`; if(p.decor)s+=`, decor:true`; if(p.oneway)s+=`, oneway:true`; if(p.angle)s+=`, angle:${p.angle}`; if(p.goal)s+=`, goal:true`; return s+' }'; }).join(',\n');
   const haz=m.hazards.map(h=>`{ x:${h.x}, y:${h.y} }`).join(', ');
   return `  {\n    name: '${m.name.replace(/'/g,"\\'")}',\n    width: ${m.width}, height: ${m.height},\n    spawn: { x:${m.spawn.x}, y:${m.spawn.y} },\n    goalY: ${m.goalY}, deathY: ${m.deathY},\n    platforms: [\n${plats}\n    ],\n    hazards: [ ${haz} ],\n  }`; }
 function showIO(t,mode){ document.getElementById('io-title').style.display='block'; const io=document.getElementById('io'); io.style.display='block'; io.value=t;
@@ -349,10 +352,10 @@ class TestScene extends Phaser.Scene{ constructor(){ super('test'); }
     this.cameras.main.setBounds(B.left,B.top,B.right-B.left,B.bottom-B.top).setBackgroundColor('#8ed6ff');
     if(m.deathY!=null) this.add.rectangle(B.left,m.deathY,B.right-B.left,B.bottom-m.deathY+200,0x3aa0e0).setOrigin(0,0).setDepth(-1);
     this.solids=[];
-    m.platforms.forEach(p=>{ const hasImg=p.tex&&this.textures.exists(p.tex);
-      if(hasImg){ const im=this.add.image(p.x,p.y,p.tex).setOrigin(0,0).setDisplaySize(p.w,p.h); if(p.decor) im.setAlpha(0.9).setDepth(-1); }
-      else { const col=parseInt(colorOf(p).slice(1),16); const r=this.add.rectangle(p.x,p.y,p.w,p.h,col).setOrigin(0,0);
-        if(p.decor){ r.setAlpha(0.7).setDepth(-1); } else this.add.rectangle(p.x,p.y,p.w,4,0x57c23a).setOrigin(0,0); }
+    m.platforms.forEach(p=>{ const hasImg=p.tex&&this.textures.exists(p.tex); const cx=p.x+p.w/2, cy=p.y+p.h/2, a=p.angle||0;
+      if(hasImg){ const im=this.add.image(cx,cy,p.tex).setOrigin(0.5,0.5).setDisplaySize(p.w,p.h); if(a)im.setAngle(a); if(p.decor) im.setAlpha(0.9).setDepth(-1); }
+      else { const col=parseInt(colorOf(p).slice(1),16); const r=this.add.rectangle(cx,cy,p.w,p.h,col).setOrigin(0.5,0.5); if(a)r.setAngle(a);
+        if(p.decor){ r.setAlpha(0.7).setDepth(-1); } else if(!a) this.add.rectangle(p.x,p.y,p.w,4,0x57c23a).setOrigin(0,0); }
       if(p.decor) return;
       const z=this.add.zone(p.x,p.y,p.w,p.h).setOrigin(0,0); this.physics.add.existing(z,true); z.body.updateFromGameObject(); z.oneway=!!p.oneway; this.solids.push(z); });
     this.hz=this.physics.add.staticGroup(); (m.hazards||[]).forEach(h=>{ const c=this.add.circle(h.x,h.y,9,0xff4444); this.physics.add.existing(c,true); c.body.setCircle(9); this.hz.add(c); });
