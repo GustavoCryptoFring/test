@@ -65,22 +65,17 @@ class Game extends Phaser.Scene {
 
   preload() {
     // =====================================================================
-    //  ТВОИ ТЕКСТУРЫ
-    //  1) Положи PNG рядом с index.html (удобно в папку assets/).
-    //  2) Раскомментируй нужные строки. Ключ ('ninja','sushi'...) должен
-    //     совпадать с тем, что используется в коде и в полях tex у платформ.
-    //  Загруженная картинка автоматически заменит рисованный плейсхолдер.
+    //  ТВОИ ТЕКСТУРЫ — грузятся автоматически.
+    //  Просто положи PNG в папку assets/ с именем, равным ключу текстуры:
+    //  bamboo -> assets/bamboo.png, cup -> assets/cup.png, ninja -> assets/ninja.png и т.д.
+    //  Если файла нет — будет рисованный плейсхолдер (игра не сломается).
+    //  ASSET_VER: подними число, если обновил картинки и они не меняются из-за кэша.
     // =====================================================================
-    // this.load.image('ninja',     'assets/ninja.png');
-    // this.load.image('sushi',     'assets/sushi.png');
-    // this.load.image('chopstick', 'assets/chopstick.png');
-    // this.load.image('bamboo',    'assets/bamboo.png');
-    // this.load.image('bowl',      'assets/bowl.png');
-    // this.load.image('cup',       'assets/cup.png');
-    // this.load.image('coin',      'assets/coin.png');
-    // this.load.image('umbrella',  'assets/umbrella.png');
-    // this.load.image('dirt',      'assets/dirt.png');
-    // this.load.image('grass',     'assets/grass.png');
+    const ASSET_VER = '1';
+    const keys = new Set(['ninja']);
+    (typeof MAPS !== 'undefined' ? MAPS : []).forEach(m =>
+      (m.platforms || []).forEach(p => { if (p.tex) keys.add(p.tex); }));
+    keys.forEach(k => this.load.image(k, 'assets/' + k + '.png?v=' + ASSET_VER));
   }
 
   create() {
