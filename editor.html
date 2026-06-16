@@ -215,7 +215,9 @@ function evtWorld(e){ const r=cv.getBoundingClientRect(); return toWorld(e.clien
 function hitPlatform(x,y){ for(let i=M().platforms.length-1;i>=0;i--){ const p=M().platforms[i]; if(x>=p.x&&x<=p.x+p.w&&y>=p.y&&y<=p.y+p.h) return p; } return null; }
 function hitHazard(x,y){ return M().hazards.find(h=>Math.hypot(h.x-x,h.y-y)<14); }
 
-cv.addEventListener('mousedown',e=>{ const [wx,wy]=evtWorld(e);
+cv.addEventListener('mousedown',e=>{
+  if(e.button===1){ e.preventDefault(); drag={mode:'pan',sx:e.clientX,sy:e.clientY,ox:view.scrollX,oy:view.scrollY}; return; }
+  const [wx,wy]=evtWorld(e);
   if(tool==='spawn'){ M().spawn={x:snap(wx),y:snap(wy)}; return; }
   if(tool==='haz'){ M().hazards.push({x:snap(wx),y:snap(wy)}); return; }
   if(tool==='erase'){ const p=hitPlatform(wx,wy); if(p){ M().platforms.splice(M().platforms.indexOf(p),1); if(sel===p)selectPlat(null); return; }
@@ -233,6 +235,7 @@ cv.addEventListener('mousedown',e=>{ const [wx,wy]=evtWorld(e);
 cv.addEventListener('mousemove',e=>{ const [wx,wy]=evtWorld(e);
   document.getElementById('coords').textContent=`x: ${Math.round(wx)}  y: ${Math.round(wy)} · колесо — вверх/вниз, Shift+колесо — вбок`;
   if(!drag)return;
+  if(drag.mode==='pan'){ view.scrollX=drag.ox-(e.clientX-drag.sx)/view.zoom; view.scrollY=drag.oy-(e.clientY-drag.sy)/view.zoom; return; }
   if(drag.mode==='move'&&sel){ sel.x=snap(wx-drag.dx); sel.y=snap(wy-drag.dy); syncPanel(); }
   else if(drag.mode==='draw'){ const x=Math.min(drag.start.x,wx),y=Math.min(drag.start.y,wy);
     drag.rect={x:snap(x),y:snap(y),w:snap(Math.abs(wx-drag.start.x)),h:snap(Math.abs(wy-drag.start.y))}; }
@@ -335,7 +338,7 @@ class TestScene extends Phaser.Scene{ constructor(){ super('test'); }
       const z=this.add.zone(p.x,p.y,p.w,p.h).setOrigin(0,0); this.physics.add.existing(z,true); z.body.updateFromGameObject(); this.solids.push(z); });
     this.hz=this.physics.add.staticGroup(); (m.hazards||[]).forEach(h=>{ const c=this.add.circle(h.x,h.y,9,0xff4444); this.physics.add.existing(c,true); c.body.setCircle(9); this.hz.add(c); });
     this.pl=this.physics.add.sprite(m.spawn.x,m.spawn.y,'nj'); this.pl.body.setSize(22,28).setOffset(3,3); this.pl.setMaxVelocity(PH.SPEED,2000);
-    this.physics.add.collider(this.pl,this.solids); this.physics.add.overlap(this.pl,this.hz,()=>this.resp());
+    this.physics.add.collider(this.pl,this.solids,null,(pl,plat)=>pl.body.velocity.y>=0 && pl.body.bottom<=plat.body.top+6); this.physics.add.overlap(this.pl,this.hz,()=>this.resp());
     this.cameras.main.startFollow(this.pl,true,0.12,0.14); this.cameras.main.setDeadzone(160,90);
     this.k=this.input.keyboard.addKeys('W,A,S,D,SPACE,UP,LEFT,RIGHT'); this.jl=PH.MAX_JUMPS;
     this.ui=this.add.text(10,8,'',{fontFamily:'monospace',fontSize:'18px',color:'#fff',stroke:'#1c2a40',strokeThickness:4}).setScrollFactor(0); }catch(e){ showTestError(e); } }
@@ -350,8 +353,8 @@ function showTestError(e){ const d=document.getElementById('test-err'); d.style.
   d.textContent='Ошибка в тесте:\n'+(e&&e.message?e.message:e)+'\n'+((e&&e.stack)?e.stack.split('\n').slice(0,3).join('\n'):''); console.error(e); }
 window.addEventListener('error',ev=>{ if(document.getElementById('test').style.display==='block') showTestError(ev.error||ev.message); });
 document.getElementById('b-test').onclick=()=>{ testMap=M(); document.getElementById('test-err').style.display='none'; document.getElementById('test').style.display='block';
-  game=new Phaser.Game({ type:Phaser.AUTO,parent:'game',width:window.innerWidth,height:window.innerHeight,pixelArt:true,
-    scale:{mode:Phaser.Scale.RESIZE}, physics:{default:'arcade',arcade:{gravity:{y:PH.GRAVITY}}}, scene:[TestScene] }); };
+  game=new Phaser.Game({ type:Phaser.AUTO,parent:'game',width:800,height:450,pixelArt:true,
+    scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH}, physics:{default:'arcade',arcade:{gravity:{y:PH.GRAVITY}}}, scene:[TestScene] }); };
 document.getElementById('back').onclick=()=>{ if(game){ game.destroy(true); game=null; } document.getElementById('test').style.display='none'; };
 function tbind(id,key){ const el=document.getElementById(id);
   el.addEventListener('pointerdown',e=>{ e.preventDefault(); if(key==='jump')tctrl.jump=true; else tctrl[key]=true; });
