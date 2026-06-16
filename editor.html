@@ -316,10 +316,10 @@ document.getElementById('io-load').onclick=()=>{ let t=document.getElementById('
     maps=arr; cur=0; renderMapSel(); selectPlat(null); syncMapPanel(); alert('Загружено карт: '+maps.length); }catch(e){ alert('Не удалось разобрать текст: '+e.message); } };
 
 // ===== ТЕСТ =====
-let game=null, tctrl={left:false,right:false,jump:false};
-class TestScene extends Phaser.Scene{ init(d){ this.m=d.m; }
+let game=null, tctrl={left:false,right:false,jump:false}, testMap=null;
+class TestScene extends Phaser.Scene{ constructor(){ super('test'); }
   preload(){ OBJECTS.forEach(o=>{ if(o.src) this.load.image(o.tex,o.src+'?t='+Date.now()); }); }
-  create(){ const g=this.make.graphics({add:false});
+  create(){ this.m=testMap; const g=this.make.graphics({add:false});
     g.fillStyle(0x2f2f45).fillRoundedRect(2,8,24,22,6); g.fillStyle(0xe8e8ef).fillRect(5,15,18,5);
     g.fillStyle(0x57c23a).fillRect(7,2,3,8).fillRect(15,2,3,8); g.generateTexture('nj',28,32); g.destroy();
     const m=this.m; this.physics.world.setBounds(0,-300,m.width,m.height+600);
@@ -345,10 +345,9 @@ class TestScene extends Phaser.Scene{ init(d){ this.m=d.m; }
     if(wj&&this.jl>0){ p.setVelocityY(-PH.JUMP); this.jl--; }
     if(m.deathY!=null&&p.y>m.deathY)this.resp(); if(p.y>m.height+400)this.resp();
     this.ui.setText('↑ '+Math.max(0,Math.floor((m.spawn.y-p.y)/32))+' м'+(p.y<=m.goalY?'   ВЕРШИНА!':'')); } }
-document.getElementById('b-test').onclick=()=>{ document.getElementById('test').style.display='block';
+document.getElementById('b-test').onclick=()=>{ testMap=M(); document.getElementById('test').style.display='block';
   game=new Phaser.Game({ type:Phaser.AUTO,parent:'game',width:window.innerWidth,height:window.innerHeight,pixelArt:true,
-    scale:{mode:Phaser.Scale.RESIZE}, physics:{default:'arcade',arcade:{gravity:{y:PH.GRAVITY}}}, scene:[TestScene] });
-  game.scene.start('TestScene',{m:M()}); };
+    scale:{mode:Phaser.Scale.RESIZE}, physics:{default:'arcade',arcade:{gravity:{y:PH.GRAVITY}}}, scene:[TestScene] }); };
 document.getElementById('back').onclick=()=>{ if(game){ game.destroy(true); game=null; } document.getElementById('test').style.display='none'; };
 function tbind(id,key){ const el=document.getElementById(id);
   el.addEventListener('pointerdown',e=>{ e.preventDefault(); if(key==='jump')tctrl.jump=true; else tctrl[key]=true; });
