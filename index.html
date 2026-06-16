@@ -3,14 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Ninja Parkour — карты и текстуры</title>
+<title>Ninja Parkour</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
 <script src="map.js"></script>
 <style>
   html, body { margin:0; padding:0; height:100%; background:#8ed6ff; overflow:hidden;
     font-family:system-ui, sans-serif; -webkit-user-select:none; user-select:none; }
-  #game-wrap { position:relative; width:100vw; height:100vh; display:flex;
-    align-items:center; justify-content:center; }
+  #game-wrap { position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; }
   #game canvas { image-rendering:pixelated; }
   #touch { position:absolute; inset:0; pointer-events:none; }
   .btn { position:absolute; bottom:18px; width:64px; height:64px; border-radius:16px;
@@ -33,261 +32,210 @@
 </div>
 
 <script>
-// ===========================================================================
-//  ФИЗИКА
-// ===========================================================================
+// ===== ФИЗИКА =====
 const DESIGN_W = 800, DESIGN_H = 450;
 const SPEED = 240, JUMP = 560, GRAVITY = 1300, MAX_JUMPS = 1;
+const PW = 22, PH = 28;          // размер тела персонажа (для попиксельных проб)
 
-// ===========================================================================
-//  КАРТЫ грузятся из отдельного файла map.js (он подключён в <head>).
-//  Чтобы сменить карту — меняешь содержимое map.js (вставляешь туда экспорт
-//  из редактора). Формат map.js: const MAPS = [ {...} ];
-// ===========================================================================
-
-let currentMap = 0;  // активная карта (на финише сама переходит к следующей; клавиши 1/2/3 — вручную)
-
-// ===========================================================================
 let controls = { left:false, right:false, jump:false };
 
-// Авто-границы зоны: считаются по самим объектам + запас по краям.
-// Никакого жёсткого размера карты — играешь там, где есть платформы.
+// Авто-границы зоны по объектам + запас
 function playBounds(m){
   let L=1e9,T=1e9,R=-1e9,B=-1e9;
   (m.platforms||[]).forEach(p=>{ L=Math.min(L,p.x); T=Math.min(T,p.y); R=Math.max(R,p.x+p.w); B=Math.max(B,p.y+p.h); });
   L=Math.min(L,m.spawn.x); R=Math.max(R,m.spawn.x); T=Math.min(T,m.spawn.y); B=Math.max(B,m.spawn.y);
   if(!isFinite(L)){ L=0;T=0;R=m.width||1000;B=m.height||1000; }
-  const PX=320, PT=320, PB=220;   // запас по краям, чтобы граница не была резкой
-  return { left:L-PX, top:T-PT, right:R+PX, bottom:B+PB };
+  const PX=320,PT=320,PBt=220; return { left:L-PX, top:T-PT, right:R+PX, bottom:B+PBt };
+}
+
+// Маска непрозрачных пикселей текстуры (кэш по ключу). null = не удалось прочитать -> считаем сплошным прямоугольником.
+const MASKS = {};
+function buildMask(scene, key){
+  if(key in MASKS) return MASKS[key];
+  let img;
+  try { img = scene.textures.get(key).getSourceImage(); } catch(e){ return MASKS[key]=null; }
+  if(!img || !img.width) return MASKS[key]=null;
+  try {
+    const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height;
+    const c=cv.getContext('2d'); c.drawImage(img,0,0);
+    const d=c.getImageData(0,0,img.width,img.height).data;
+    const a=new Uint8Array(img.width*img.height);
+    for(let i=0;i<a.length;i++) a[i]=d[i*4+3]>40?1:0;
+    return MASKS[key]={ w:img.width, h:img.height, a };
+  } catch(e){ return MASKS[key]=null; }   // tainted (file://) — без сервера пиксели не читаются
 }
 
 class Game extends Phaser.Scene {
-
   preload() {
-    // =====================================================================
-    //  ТВОИ ТЕКСТУРЫ — грузятся автоматически.
-    //  Просто положи PNG в папку assets/ с именем, равным ключу текстуры:
-    //  bamboo -> assets/bamboo.png, cup -> assets/cup.png, ninja -> assets/ninja.png и т.д.
-    //  Если файла нет — будет рисованный плейсхолдер (игра не сломается).
-    //  ASSET_VER: подними число, если обновил картинки и они не меняются из-за кэша.
-    // =====================================================================
-    const ASSET_VER = '1';
-    const keys = new Set(['ninja']);
-    (typeof MAPS !== 'undefined' ? MAPS : []).forEach(m =>
-      (m.platforms || []).forEach(p => { if (p.tex) keys.add(p.tex); }));
-    keys.forEach(k => this.load.image(k, 'assets/' + k + '.png?v=' + ASSET_VER));
+    const ASSET_VER='1';
+    const keys=new Set(['ninja']);
+    (typeof MAPS!=='undefined'?MAPS:[]).forEach(m=>(m.platforms||[]).forEach(p=>{ if(p.tex)keys.add(p.tex); }));
+    keys.forEach(k=>this.load.image(k,'assets/'+k+'.png?v='+ASSET_VER));
   }
 
   create() {
-    ensureTextures(this);   // дорисовывает плейсхолдеры для всех ключей, которых ты ещё не загрузил
-    const map = MAPS[currentMap];
-    this.map = map;
-
+    ensureTextures(this);
+    const map = MAPS[currentMap]; this.map = map;
     const PB = playBounds(map); this.pb = PB;
-    this.physics.world.setBounds(PB.left, PB.top - 200, PB.right - PB.left, (PB.bottom - PB.top) + 600);
-    this.cameras.main.setBounds(PB.left, PB.top, PB.right - PB.left, PB.bottom - PB.top);
-    this.cameras.main.setBackgroundColor('#8ed6ff');
 
-    for (let i = 0; i < 30; i++) {
-      this.add.image(Phaser.Math.Between(PB.left, PB.right), Phaser.Math.Between(PB.top, PB.bottom), 'cloud')
-        .setScrollFactor(0.5).setAlpha(0.85).setScale(Phaser.Math.FloatBetween(0.7, 1.7));
-    }
+    this.cameras.main.setBounds(PB.left, PB.top, PB.right-PB.left, PB.bottom-PB.top).setBackgroundColor('#8ed6ff');
 
-    if (map.deathY !== null) {
-      this.add.tileSprite(PB.left, map.deathY, PB.right - PB.left, PB.bottom - map.deathY + 200, 'water')
-        .setOrigin(0, 0).setDepth(-1);
-    }
+    for(let i=0;i<30;i++) this.add.image(Phaser.Math.Between(PB.left,PB.right), Phaser.Math.Between(PB.top,PB.bottom), 'cloud')
+      .setScrollFactor(0.5).setAlpha(0.85).setScale(Phaser.Math.FloatBetween(0.7,1.7));
 
-    this.solids = [];
-    map.platforms.forEach(p => this.makeBlock(p));
+    if(map.deathY!==null) this.add.tileSprite(PB.left, map.deathY, PB.right-PB.left, PB.bottom-map.deathY+200, 'water').setOrigin(0,0).setDepth(-1);
 
-    this.hazardGroup = this.physics.add.staticGroup();
-    (map.hazards || []).forEach(h => {
-      const s = this.hazardGroup.create(h.x, h.y, 'shuriken');
-      s.body.setSize(14, 14);
-      this.tweens.add({ targets: s, angle: 360, duration: 1100, repeat: -1 });
-    });
+    // строим объекты: визуал + данные для попиксельной коллизии
+    this.objs = [];
+    (map.platforms||[]).forEach(p => this.makeObj(p));
 
-    // Игрок
-    this.player = this.physics.add.sprite(map.spawn.x, map.spawn.y, 'ninja');
-    this.player.body.setSize(16, 22).setOffset(1, 1);
-    this.player.setMaxVelocity(SPEED, 2000);
-    this.physics.add.collider(this.player, this.solids, null, (pl, plat) => {
-      if (!plat.oneway) return true;                              // твёрдая со всех сторон
-      return pl.body.velocity.y >= 0 && (pl.body.prev.y + pl.body.height) <= plat.body.top + 4;  // платформа: только сверху
-    });
-    this.physics.add.overlap(this.player, this.hazardGroup, () => this.respawn());
+    // ловушки
+    this.haz = (map.hazards||[]).map(h => { this.add.image(h.x,h.y,'shuriken'); return {x:h.x,y:h.y,r:11}; });
 
-    this.cameras.main.startFollow(this.player, true, 0.12, 0.14);
-    this.cameras.main.setDeadzone(160, 90);
+    // игрок (обычный спрайт; физика ручная)
+    this.player = this.add.sprite(map.spawn.x, map.spawn.y, 'ninja').setDepth(5);
+    this.px = map.spawn.x - PW/2; this.py = map.spawn.y - PH/2;
+    this.vx = 0; this.vy = 0; this.onGround = false;
+
+    this.cameras.main.startFollow(this.player, true, 0.14, 0.16);
+    this.cameras.main.setDeadzone(140, 90);
 
     this.keys = this.input.keyboard.addKeys('W,A,S,D,SPACE,UP,LEFT,RIGHT,ONE,TWO,THREE');
-    this.jumpsLeft = MAX_JUMPS;
     this.bestUp = 0; this.won = false; this.startTime = this.time.now;
 
-    this.uiUp   = this.add.text(12, 10, '↑ 0 м', uiStyle()).setScrollFactor(0).setDepth(10);
-    this.uiTime = this.add.text(DESIGN_W-12, 10, '00:00.0', uiStyle()).setScrollFactor(0).setOrigin(1,0).setDepth(10);
-    this.uiName = this.add.text(DESIGN_W/2, 10, map.name, { ...uiStyle(), fontSize:'16px' }).setScrollFactor(0).setOrigin(0.5,0).setDepth(10);
-    this.uiMsg  = this.add.text(DESIGN_W/2, DESIGN_H/2, '', { ...uiStyle(), fontSize:'26px', align:'center' }).setScrollFactor(0).setOrigin(0.5).setDepth(10);
+    this.uiUp   = this.add.text(12,10,'↑ 0 м', uiStyle()).setScrollFactor(0).setDepth(10);
+    this.uiTime = this.add.text(DESIGN_W-12,10,'00:00.0', uiStyle()).setScrollFactor(0).setOrigin(1,0).setDepth(10);
+    this.uiName = this.add.text(DESIGN_W/2,10, map.name, {...uiStyle(), fontSize:'16px'}).setScrollFactor(0).setOrigin(0.5,0).setDepth(10);
+    this.uiMsg  = this.add.text(DESIGN_W/2,DESIGN_H/2,'', {...uiStyle(), fontSize:'26px', align:'center'}).setScrollFactor(0).setOrigin(0.5).setDepth(10);
   }
 
-  // Объект карты. p.decor — без столкновения; p.oneway — проходим снизу; p.angle — поворот визуала (°).
-  // Столкновение всегда прямоугольное (AABB) по исходным x,y,w,h — Arcade не вращает тела.
-  makeBlock(p) {
-    const { x, y, w, h } = p;
-    const a = p.angle || 0, cx = x + w/2, cy = y + h/2;
+  makeObj(p){
+    const { x,y,w,h } = p, a=p.angle||0, cx=x+w/2, cy=y+h/2;
     const hasTex = p.tex && this.textures.exists(p.tex);
-
-    if (p.decor) {                                   // декорация: только рисунок, без коллайдера
-      if (hasTex) { const s = this.add.tileSprite(cx, cy, w, h, p.tex).setOrigin(0.5,0.5).setDepth(-1).setAlpha(0.95); if (a) s.setAngle(a); }
-      return;
-    }
-    if (hasTex) {
-      const s = this.add.tileSprite(cx, cy, w, h, p.tex).setOrigin(0.5, 0.5); if (a) s.setAngle(a);
-    } else if (a) {
-      this.add.tileSprite(cx, cy, w, h, 'dirt').setOrigin(0.5, 0.5).setAngle(a);
-    } else {
-      this.add.tileSprite(x, y, w, h, 'dirt').setOrigin(0, 0);
-      this.add.tileSprite(x, y, w, 8, 'grass').setOrigin(0, 0).setDepth(1);
-    }
-    const z = this.add.zone(x, y, w, h).setOrigin(0, 0);
-    this.physics.add.existing(z, true);
-    z.body.updateFromGameObject();
-    z.oneway = !!p.oneway;
-    this.solids.push(z);
-    if (p.goal) this.add.image(cx, y, 'flag').setOrigin(0.5, 1).setDepth(2);
+    // визуал
+    if(hasTex){ const s=this.add.tileSprite(cx,cy,w,h,p.tex).setOrigin(0.5,0.5); if(a)s.setAngle(a); if(p.decor)s.setDepth(-1).setAlpha(0.95); }
+    else if(p.decor){ /* нет картинки — ничего не рисуем */ }
+    else if(a){ this.add.tileSprite(cx,cy,w,h,'dirt').setOrigin(0.5,0.5).setAngle(a); }
+    else { this.add.tileSprite(x,y,w,h,'dirt').setOrigin(0,0); this.add.tileSprite(x,y,w,8,'grass').setOrigin(0,0).setDepth(1); }
+    if(p.goal) this.add.image(cx,y,'flag').setOrigin(0.5,1).setDepth(2);
+    if(p.decor) return;     // декор не участвует в столкновениях
+    // данные коллизии: маска пикселей (если текстура читается), иначе сплошной прямоугольник
+    this.objs.push({ x,y,w,h, cx,cy, ang:a*Math.PI/180, oneway:!!p.oneway,
+      mask: hasTex ? buildMask(this,p.tex) : null });
   }
 
-  respawn() {
-    this.player.setPosition(this.map.spawn.x, this.map.spawn.y);
-    this.player.setVelocity(0, 0);
-    this.jumpsLeft = MAX_JUMPS;
+  // Есть ли непрозрачный пиксель в мировой точке (wx,wy)? includeOneway=false для боков/головы.
+  solidAt(wx,wy,includeOneway){
+    for(const o of this.objs){
+      if(o.oneway && !includeOneway) continue;
+      let lx=wx-o.cx, ly=wy-o.cy;
+      if(o.ang){ const cs=Math.cos(-o.ang), sn=Math.sin(-o.ang); const nx=lx*cs-ly*sn, ny=lx*sn+ly*cs; lx=nx; ly=ny; }
+      const u=lx+o.w/2, v=ly+o.h/2;
+      if(u<0||u>=o.w||v<0||v>=o.h) continue;
+      if(o.mask){ const tx=Math.min(o.mask.w-1,(u/o.w*o.mask.w)|0), ty=Math.min(o.mask.h-1,(v/o.h*o.mask.h)|0);
+        if(o.mask.a[ty*o.mask.w+tx]) return true; }
+      else return true;
+    }
+    return false;
+  }
+  hitX(right){ const ex = right? this.px+PW : this.px; return this.solidAt(ex,this.py+3,false)||this.solidAt(ex,this.py+PH/2,false)||this.solidAt(ex,this.py+PH-3,false); }
+  hitY(down){ const ey = down? this.py+PH : this.py; const inc=down; return this.solidAt(this.px+3,ey,inc)||this.solidAt(this.px+PW/2,ey,inc)||this.solidAt(this.px+PW-3,ey,inc); }
+
+  moveAxis(axis,dist){
+    let rem=dist;
+    while(Math.abs(rem)>0.001){
+      const s = Math.abs(rem)<2 ? rem : (rem>0?2:-2);
+      if(axis==='x'){ this.px+=s; if(this.hitX(s>0)){ this.px-=s; this.vx=0; break; } }
+      else { this.py+=s; if(this.hitY(s>0)){ this.py-=s; if(s>0)this.onGround=true; this.vy=0; break; } }
+      rem-=s;
+    }
   }
 
-  update() {
-    if (this.won) return;
-    const p = this.player, k = this.keys, map = this.map;
+  respawn(){ this.px=this.map.spawn.x-PW/2; this.py=this.map.spawn.y-PH/2; this.vx=0; this.vy=0; this.onGround=false; }
 
-    if (Phaser.Input.Keyboard.JustDown(k.ONE))   { currentMap = 0; this.scene.restart(); return; }
-    if (Phaser.Input.Keyboard.JustDown(k.TWO)   && MAPS[1]) { currentMap = 1; this.scene.restart(); return; }
-    if (Phaser.Input.Keyboard.JustDown(k.THREE) && MAPS[2]) { currentMap = 2; this.scene.restart(); return; }
+  update(time,delta){
+    if(this.won) return;
+    const k=this.keys, map=this.map, dt=Math.min(delta/1000,0.033);
+
+    if(Phaser.Input.Keyboard.JustDown(k.ONE))               { currentMap=0; this.scene.restart(); return; }
+    if(Phaser.Input.Keyboard.JustDown(k.TWO)   && MAPS[1])   { currentMap=1; this.scene.restart(); return; }
+    if(Phaser.Input.Keyboard.JustDown(k.THREE) && MAPS[2])   { currentMap=2; this.scene.restart(); return; }
 
     const left  = controls.left  || k.A.isDown || k.LEFT.isDown;
     const right = controls.right || k.D.isDown || k.RIGHT.isDown;
-    if (left && !right)      { p.setVelocityX(-SPEED); p.setFlipX(true); }
-    else if (right && !left) { p.setVelocityX(SPEED);  p.setFlipX(false); }
-    else                     { p.setVelocityX(0); }
+    this.vx = (left&&!right)? -SPEED : (right&&!left)? SPEED : 0;
+    if(left&&!right) this.player.setFlipX(true); else if(right&&!left) this.player.setFlipX(false);
 
-    const onGround = p.body.blocked.down || p.body.touching.down;
-    if (onGround) this.jumpsLeft = MAX_JUMPS;
-    const wantJump = controls.jump
-      || Phaser.Input.Keyboard.JustDown(k.SPACE)
-      || Phaser.Input.Keyboard.JustDown(k.W)
-      || Phaser.Input.Keyboard.JustDown(k.UP);
-    controls.jump = false;
-    if (wantJump && this.jumpsLeft > 0) { p.setVelocityY(-JUMP); this.jumpsLeft--; }
+    const wantJump = controls.jump || Phaser.Input.Keyboard.JustDown(k.SPACE)
+      || Phaser.Input.Keyboard.JustDown(k.W) || Phaser.Input.Keyboard.JustDown(k.UP);
+    controls.jump=false;
+    if(wantJump && this.onGround){ this.vy=-JUMP; this.onGround=false; }
 
-    if (map.deathY !== null && p.y > map.deathY) this.respawn();
-    if (p.y > this.pb.bottom + 400) this.respawn();
+    this.vy += GRAVITY*dt;
+    this.onGround=false;
+    this.moveAxis('x', this.vx*dt);
+    this.moveAxis('y', this.vy*dt);
 
-    if (p.y <= map.goalY) { this.win(); return; }
+    this.player.setPosition(this.px+PW/2, this.py+PH/2);
 
-    const up = Math.max(0, Math.floor((map.spawn.y - p.y) / 32));
-    this.bestUp = Math.max(this.bestUp, up);
-    this.uiUp.setText('↑ ' + this.bestUp + ' м');
-    this.uiTime.setText(formatTime((this.time.now - this.startTime) / 1000));
+    const cyc = this.py+PH/2;
+    if(map.deathY!==null && cyc>map.deathY) this.respawn();
+    if(cyc > this.pb.bottom+400) this.respawn();
+    if(cyc <= map.goalY){ this.win(); return; }
+    for(const hz of this.haz){ if(Math.hypot(this.px+PW/2-hz.x, cyc-hz.y) < hz.r+10){ this.respawn(); break; } }
+
+    const up=Math.max(0,Math.floor((map.spawn.y-cyc)/32));
+    this.bestUp=Math.max(this.bestUp,up);
+    this.uiUp.setText('↑ '+this.bestUp+' м');
+    this.uiTime.setText(formatTime((this.time.now-this.startTime)/1000));
   }
 
-  win() {
-    this.won = true;
-    this.player.setVelocity(0, 0);
-    const t = formatTime((this.time.now - this.startTime) / 1000);
-    const next = (currentMap + 1) % MAPS.length;
-    this.uiMsg.setText('ВЕРШИНА!\n' + t + '\n\n(нажми — следующая карта)');
-    const go = () => { currentMap = next; this.scene.restart(); };
-    this.input.once('pointerdown', go);
-    this.input.keyboard.once('keydown', go);
+  win(){
+    this.won=true;
+    const t=formatTime((this.time.now-this.startTime)/1000);
+    const next=(currentMap+1)%MAPS.length;
+    this.uiMsg.setText('ВЕРШИНА!\n'+t+'\n\n(нажми — следующая карта)');
+    const go=()=>{ currentMap=next; this.scene.restart(); };
+    this.input.once('pointerdown',go); this.input.keyboard.once('keydown',go);
   }
 }
 
-// ---- Вспомогательное ----
-function uiStyle() {
-  return { fontFamily:'monospace', fontSize:'20px', color:'#fff', stroke:'#1c2a40', strokeThickness:4 };
-}
-function formatTime(s) {
-  const m = Math.floor(s/60), sec = (s%60).toFixed(1).padStart(4,'0');
-  return String(m).padStart(2,'0') + ':' + sec;
-}
+function uiStyle(){ return { fontFamily:'monospace', fontSize:'20px', color:'#fff', stroke:'#1c2a40', strokeThickness:4 }; }
+function formatTime(s){ const m=Math.floor(s/60), sec=(s%60).toFixed(1).padStart(4,'0'); return String(m).padStart(2,'0')+':'+sec; }
 
-// Рисует плейсхолдер-текстуру ТОЛЬКО если такой ключ ещё не загружен из файла.
-// Значит: загрузил свой PNG в preload() -> используется он; не загрузил -> рисунок ниже.
-function ensureTextures(scene) {
-  const g = scene.make.graphics({ x:0, y:0, add:false });
-  const make = (key, w, h, draw) => {
-    if (scene.textures.exists(key)) return;   // твоя картинка уже есть — не трогаем
-    g.clear(); draw(); g.generateTexture(key, w, h);
-  };
-
-  make('dirt', 16, 16, () => { g.fillStyle(0xd77f2c).fillRect(0,0,16,16);
-    g.fillStyle(0xc06f24).fillRect(2,4,3,3).fillRect(9,9,3,3).fillRect(12,2,2,2); });
-  make('grass', 16, 8, () => { g.fillStyle(0x57c23a).fillRect(0,0,16,8); g.fillStyle(0x7ad94f).fillRect(0,0,16,3); });
-  make('water', 32, 16, () => { g.fillStyle(0x3aa0e0).fillRect(0,0,32,16); g.fillStyle(0x59b6ef).fillRect(0,0,32,4); });
-  make('cloud', 64, 30, () => { g.fillStyle(0xffffff,.95);
-    g.fillRoundedRect(0,8,64,18,9).fillCircle(18,14,12).fillCircle(40,12,14).fillCircle(52,16,10); });
-  make('shuriken', 18, 18, () => { g.fillStyle(0x9aa3ad);
-    g.fillTriangle(9,0,12,9,6,9).fillTriangle(18,9,9,12,9,6).fillTriangle(9,18,6,9,12,9).fillTriangle(0,9,9,6,9,12);
-    g.fillStyle(0x3a3f47).fillCircle(9,9,2); });
-  make('flag', 16, 44, () => { g.fillStyle(0x6b4a2b).fillRect(2,0,3,44); g.fillStyle(0xe23b3b).fillTriangle(5,2,15,8,5,14); });
-
-  // тематические платформы-плейсхолдеры (заменишь своими PNG)
-  make('sushi', 32, 18, () => { g.fillStyle(0xf2efe6).fillRoundedRect(0,6,32,12,4); g.fillStyle(0xf07a59).fillRoundedRect(0,0,32,9,4); });
-  make('chopstick', 32, 12, () => { g.fillStyle(0xb5732f).fillRect(0,3,32,6); g.fillStyle(0x8f5722).fillRect(0,8,32,2); });
-  make('cup', 24, 22, () => { g.fillStyle(0x3aa0e0).fillRoundedRect(2,2,20,18,4); g.fillStyle(0x9fd6f5).fillRect(4,4,16,4); });
-  make('bowl', 32, 16, () => { g.fillStyle(0xcfa15a).fillRoundedRect(0,4,32,12,5); g.fillStyle(0xeedcc0).fillRect(3,5,26,3); });
-  make('coin', 24, 24, () => { g.fillStyle(0xe8b94a).fillCircle(12,12,11); g.fillStyle(0xbf962f).fillCircle(12,12,11); g.fillStyle(0xe8b94a).fillCircle(12,12,9); g.fillStyle(0xbf962f).fillRect(8,8,8,8); });
-  make('bamboo', 32, 12, () => { g.fillStyle(0xe0c060).fillRect(0,2,32,8); g.fillStyle(0xc9a83f).fillRect(10,2,2,8).fillRect(22,2,2,8); });
-  make('umbrella', 64, 48, () => { g.fillStyle(0xe0604a).fillTriangle(0,40,32,2,64,40); g.fillStyle(0xb84436).fillRect(30,40,4,8); });
-  make('mask', 48, 40, () => { g.fillStyle(0xeef0f5).fillRoundedRect(2,2,44,36,10); g.fillStyle(0xf03a7a).fillRect(10,14,10,4).fillRect(28,14,10,4); });
-  make('lantern', 32, 48, () => { g.fillStyle(0xe0a83a).fillRoundedRect(4,4,24,32,8); g.fillStyle(0xc97f2a).fillRect(6,18,20,3); g.fillStyle(0xd23b3b).fillRect(14,36,4,10); });
-
-  // ===== НИНДЗЯ (модель игрока) — ЗАМЕНИ НА СВОЙ PNG (ключ 'ninja') =====
-  make('ninja', 18, 24, () => {
-    g.fillStyle(0x2f2f45).fillRoundedRect(1,6,16,16,5);
-    g.fillStyle(0xe8e8ef).fillRect(3,11,12,4);
-    g.fillStyle(0x2f2f45).fillRect(7,12,2,2).fillRect(11,12,2,2);
-    g.fillStyle(0x57c23a).fillRect(5,1,2,6).fillRect(10,1,2,6);
-  });
-  // =====================================================================
-
+function ensureTextures(scene){
+  const g=scene.make.graphics({x:0,y:0,add:false});
+  const make=(key,w,h,draw)=>{ if(scene.textures.exists(key))return; g.clear(); draw(); g.generateTexture(key,w,h); };
+  make('dirt',16,16,()=>{ g.fillStyle(0xd77f2c).fillRect(0,0,16,16); g.fillStyle(0xc06f24).fillRect(2,4,3,3).fillRect(9,9,3,3).fillRect(12,2,2,2); });
+  make('grass',16,8,()=>{ g.fillStyle(0x57c23a).fillRect(0,0,16,8); g.fillStyle(0x7ad94f).fillRect(0,0,16,3); });
+  make('water',32,16,()=>{ g.fillStyle(0x3aa0e0).fillRect(0,0,32,16); g.fillStyle(0x59b6ef).fillRect(0,0,32,4); });
+  make('cloud',64,30,()=>{ g.fillStyle(0xffffff,.95); g.fillRoundedRect(0,8,64,18,9).fillCircle(18,14,12).fillCircle(40,12,14).fillCircle(52,16,10); });
+  make('shuriken',18,18,()=>{ g.fillStyle(0x9aa3ad); g.fillTriangle(9,0,12,9,6,9).fillTriangle(18,9,9,12,9,6).fillTriangle(9,18,6,9,12,9).fillTriangle(0,9,9,6,9,12); g.fillStyle(0x3a3f47).fillCircle(9,9,2); });
+  make('flag',16,44,()=>{ g.fillStyle(0x6b4a2b).fillRect(2,0,3,44); g.fillStyle(0xe23b3b).fillTriangle(5,2,15,8,5,14); });
+  make('sushi',32,18,()=>{ g.fillStyle(0xf2efe6).fillRoundedRect(0,6,32,12,4); g.fillStyle(0xf07a59).fillRoundedRect(0,0,32,9,4); });
+  make('chopstick',32,12,()=>{ g.fillStyle(0xb5732f).fillRect(0,3,32,6); g.fillStyle(0x8f5722).fillRect(0,8,32,2); });
+  make('cup',24,22,()=>{ g.fillStyle(0x3aa0e0).fillRoundedRect(2,2,20,18,4); g.fillStyle(0x9fd6f5).fillRect(4,4,16,4); });
+  make('bowl',32,16,()=>{ g.fillStyle(0xcfa15a).fillRoundedRect(0,4,32,12,5); g.fillStyle(0xeedcc0).fillRect(3,5,26,3); });
+  make('coin',24,24,()=>{ g.fillStyle(0xe8b94a).fillCircle(12,12,11); g.fillStyle(0xbf962f).fillCircle(12,12,11); g.fillStyle(0xe8b94a).fillCircle(12,12,9); g.fillStyle(0xbf962f).fillRect(8,8,8,8); });
+  make('bamboo',32,12,()=>{ g.fillStyle(0xe0c060).fillRect(0,2,32,8); g.fillStyle(0xc9a83f).fillRect(10,2,2,8).fillRect(22,2,2,8); });
+  make('umbrella',64,48,()=>{ g.fillStyle(0xe0604a).fillTriangle(0,40,32,2,64,40); g.fillStyle(0xb84436).fillRect(30,40,4,8); });
+  make('ninja',28,32,()=>{ g.fillStyle(0x2f2f45).fillRoundedRect(2,8,24,22,6); g.fillStyle(0xe8e8ef).fillRect(5,15,18,5); g.fillStyle(0x57c23a).fillRect(7,2,3,8).fillRect(15,2,3,8); });
   g.destroy();
 }
 
-// ---- Запуск ----
 new Phaser.Game({
-  type: Phaser.AUTO, parent: 'game', width: DESIGN_W, height: DESIGN_H,
-  pixelArt: true, roundPixels: true,
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  physics: { default: 'arcade', arcade: { gravity: { y: GRAVITY } } },
+  type: Phaser.AUTO, parent:'game', width:DESIGN_W, height:DESIGN_H, pixelArt:true, roundPixels:true,
+  scale:{ mode:Phaser.Scale.FIT, autoCenter:Phaser.Scale.CENTER_BOTH },
   scene: Game,
 });
 
-// ---- Экранные кнопки ----
-function bind(id, key) {
-  const el = document.getElementById(id);
-  const on  = e => { e.preventDefault(); controls[key] = true; };
-  const off = e => { e.preventDefault(); controls[key] = false; };
-  ['pointerdown'].forEach(ev => el.addEventListener(ev, on));
-  ['pointerup','pointercancel','pointerleave'].forEach(ev => el.addEventListener(ev, off));
-}
-bind('btn-left', 'left');
-bind('btn-right', 'right');
-document.getElementById('btn-jump').addEventListener('pointerdown', e => { e.preventDefault(); controls.jump = true; });
+function bind(id,key){ const el=document.getElementById(id);
+  el.addEventListener('pointerdown',e=>{ e.preventDefault(); controls[key]=true; });
+  ['pointerup','pointercancel','pointerleave'].forEach(ev=>el.addEventListener(ev,e=>{ e.preventDefault(); controls[key]=false; })); }
+bind('btn-left','left'); bind('btn-right','right');
+document.getElementById('btn-jump').addEventListener('pointerdown',e=>{ e.preventDefault(); controls.jump=true; });
 
-// ---- Telegram ----
-if (window.Telegram && window.Telegram.WebApp) {
-  window.Telegram.WebApp.ready();
-  window.Telegram.WebApp.expand();
-}
+if(window.Telegram && window.Telegram.WebApp){ window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); }
 </script>
 </body>
 </html>
