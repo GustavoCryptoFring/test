@@ -133,7 +133,7 @@ const OBJECTS = [
 
 // подгружаем картинки объектов для предпросмотра (если файла нет — будет цветной блок)
 const imgCache = {};
-OBJECTS.forEach(o=>{ if(o.src){ const im=new Image(); im.onload=()=>imgCache[o.tex]=im; im.src=o.src; } });
+OBJECTS.forEach(o=>{ if(o.src){ const im=new Image(); im.onload=()=>imgCache[o.tex]=im; im.src=o.src+'?t='+Date.now(); } });
 
 // ===== ДАННЫЕ =====
 function defaultMap(){
@@ -318,7 +318,7 @@ document.getElementById('io-load').onclick=()=>{ let t=document.getElementById('
 // ===== ТЕСТ =====
 let game=null, tctrl={left:false,right:false,jump:false};
 class TestScene extends Phaser.Scene{ init(d){ this.m=d.m; }
-  preload(){ OBJECTS.forEach(o=>{ if(o.src) this.load.image(o.tex,o.src); }); }
+  preload(){ OBJECTS.forEach(o=>{ if(o.src) this.load.image(o.tex,o.src+'?t='+Date.now()); }); }
   create(){ const g=this.make.graphics({add:false});
     g.fillStyle(0x2f2f45).fillRoundedRect(2,8,24,22,6); g.fillStyle(0xe8e8ef).fillRect(5,15,18,5);
     g.fillStyle(0x57c23a).fillRect(7,2,3,8).fillRect(15,2,3,8); g.generateTexture('nj',28,32); g.destroy();
