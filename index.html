@@ -131,18 +131,21 @@ class Game extends Phaser.Scene {
     this.uiMsg  = this.add.text(DESIGN_W/2, DESIGN_H/2, '', { ...uiStyle(), fontSize:'26px', align:'center' }).setScrollFactor(0).setOrigin(0.5).setDepth(10);
   }
 
-  // Объект карты. p.decor:true — без столкновения (фон). p.tex — текстура (если есть),
-  // иначе земля+трава. Если tex задан, но текстура не загружена — фолбэк на землю.
+  // Объект карты. p.decor — без столкновения; p.oneway — проходим снизу; p.angle — поворот визуала (°).
+  // Столкновение всегда прямоугольное (AABB) по исходным x,y,w,h — Arcade не вращает тела.
   makeBlock(p) {
     const { x, y, w, h } = p;
+    const a = p.angle || 0, cx = x + w/2, cy = y + h/2;
     const hasTex = p.tex && this.textures.exists(p.tex);
 
     if (p.decor) {                                   // декорация: только рисунок, без коллайдера
-      if (hasTex) this.add.tileSprite(x, y, w, h, p.tex).setOrigin(0, 0).setDepth(-1).setAlpha(0.95);
+      if (hasTex) { const s = this.add.tileSprite(cx, cy, w, h, p.tex).setOrigin(0.5,0.5).setDepth(-1).setAlpha(0.95); if (a) s.setAngle(a); }
       return;
     }
     if (hasTex) {
-      this.add.tileSprite(x, y, w, h, p.tex).setOrigin(0, 0);
+      const s = this.add.tileSprite(cx, cy, w, h, p.tex).setOrigin(0.5, 0.5); if (a) s.setAngle(a);
+    } else if (a) {
+      this.add.tileSprite(cx, cy, w, h, 'dirt').setOrigin(0.5, 0.5).setAngle(a);
     } else {
       this.add.tileSprite(x, y, w, h, 'dirt').setOrigin(0, 0);
       this.add.tileSprite(x, y, w, 8, 'grass').setOrigin(0, 0).setDepth(1);
@@ -150,9 +153,9 @@ class Game extends Phaser.Scene {
     const z = this.add.zone(x, y, w, h).setOrigin(0, 0);
     this.physics.add.existing(z, true);
     z.body.updateFromGameObject();
-    z.oneway = !!p.oneway;        // true = можно запрыгнуть снизу; иначе твёрдая со всех сторон
+    z.oneway = !!p.oneway;
     this.solids.push(z);
-    if (p.goal) this.add.image(x + w/2, y, 'flag').setOrigin(0.5, 1).setDepth(2);
+    if (p.goal) this.add.image(cx, y, 'flag').setOrigin(0.5, 1).setDepth(2);
   }
 
   respawn() {
