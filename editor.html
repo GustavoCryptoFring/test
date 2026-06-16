@@ -219,7 +219,10 @@ cv.addEventListener('mousedown',e=>{ const [wx,wy]=evtWorld(e);
   if(tool==='haz'){ M().hazards.push({x:snap(wx),y:snap(wy)}); return; }
   if(tool==='erase'){ const p=hitPlatform(wx,wy); if(p){ M().platforms.splice(M().platforms.indexOf(p),1); if(sel===p)selectPlat(null); return; }
     const h=hitHazard(wx,wy); if(h) M().hazards.splice(M().hazards.indexOf(h),1); return; }
-  if(tool==='stamp'&&stamp){ const p={ x:snap(wx-stamp.w/2), y:snap(wy-stamp.h/2), w:stamp.w, h:stamp.h };
+  if(tool==='stamp'&&stamp){
+    const img=stamp.tex&&imgCache[stamp.tex];
+    const w=img?img.naturalWidth:stamp.w, h=img?img.naturalHeight:stamp.h;   // родной размер PNG, если загружен
+    const p={ x:snap(wx-w/2), y:snap(wy-h/2), w, h };
     if(stamp.tex)p.tex=stamp.tex; if(stamp.decor)p.decor=true;
     M().platforms.push(p); selectPlat(p); drag={mode:'move',dx:wx-p.x,dy:wy-p.y}; return; }
   const p=hitPlatform(wx,wy);
