@@ -41,7 +41,8 @@
 <body>
 
 <div id="top">
-  <button id="t-plat" class="active">▭ Рисовать платформу</button>
+  <button id="t-select" class="active">↖ Выделить</button>
+  <button id="t-plat">▭ Рисовать платформу</button>
   <button id="t-haz">✦ Ловушка</button>
   <button id="t-spawn">⚑ Спавн</button>
   <button id="t-erase">✕ Стереть</button>
@@ -81,6 +82,7 @@
       <div class="row"><div><label>Ширина</label><input id="p-w" type="number" /></div><div><label>Высота</label><input id="p-h" type="number" /></div></div>
       <label>Текстура (tex)</label>
       <select id="p-tex"><option value="">— земля/трава —</option><option value="sushi">sushi</option><option value="chopstick">chopstick</option><option value="bamboo">bamboo</option><option value="bowl">bowl</option><option value="cup">cup</option><option value="coin">coin</option><option value="umbrella">umbrella</option><option value="mask">mask</option><option value="lantern">lantern</option></select>
+      <label><input id="p-oneway" type="checkbox" style="width:auto;" /> проходима снизу (платформа — можно запрыгнуть)</label>
       <label><input id="p-decor" type="checkbox" style="width:auto;" /> декорация (без столкновения)</label>
       <label><input id="p-goal" type="checkbox" style="width:auto;" /> это финиш (goal)</label>
       <div id="reach" class="hint"></div>
@@ -202,8 +204,8 @@ function draw(){
   plats.forEach(p=>{ let [sx,sy]=toScreen(p.x,p.y); const w=p.w*view.zoom,h=p.h*view.zoom;
     const img=p.tex&&imgCache[p.tex];
     if(img){ ctx.drawImage(img,sx,sy,w,h); }
-    else { ctx.fillStyle=colorOf(p); ctx.fillRect(sx,sy,w,h);
-      ctx.fillStyle=p.goal?'#caa414':'#57c23a'; ctx.fillRect(sx,sy,w,Math.max(2,4*view.zoom)); }
+    else { ctx.fillStyle=colorOf(p); ctx.fillRect(sx,sy,w,h); }
+    if(p.oneway||p.goal){ ctx.fillStyle=p.goal?'#caa414':'#7ad94f'; ctx.fillRect(sx,sy,w,Math.max(2,3*view.zoom)); }  // зелёная кромка = можно запрыгнуть снизу
     if(p===sel){ ctx.strokeStyle='#4f8cff'; ctx.lineWidth=2; ctx.strokeRect(sx-1,sy-1,w+2,h+2); }
     if(!img && p.tex && view.zoom>0.3){ ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillText(p.tex,sx+3,sy+h-3); } });
 
@@ -241,6 +243,7 @@ cv.addEventListener('mousedown',e=>{
     const p={ x:snap(wx-w/2), y:snap(wy-h/2), w, h };
     if(stamp.tex)p.tex=stamp.tex; if(stamp.decor)p.decor=true;
     M().platforms.push(p); selectPlat(p); drag={mode:'move',dx:wx-p.x,dy:wy-p.y}; return; }
+  if(tool==='select'){ const hp=hitPlatform(wx,wy); if(hp){ selectPlat(hp); drag={mode:'move',dx:wx-hp.x,dy:wy-hp.y}; } else selectPlat(null); return; }
   const p=hitPlatform(wx,wy);
   if(p){ selectPlat(p); drag={mode:'move',dx:wx-p.x,dy:wy-p.y}; }
   else drag={mode:'draw',start:{x:wx,y:wy},rect:{x:snap(wx),y:snap(wy),w:0,h:0}};
@@ -261,9 +264,10 @@ cv.addEventListener('wheel',e=>{ e.preventDefault(); const B=playBounds(M());
 document.addEventListener('keydown',e=>{ if((e.key==='Delete'||e.key==='Backspace')&&sel){ M().platforms.splice(M().platforms.indexOf(sel),1); selectPlat(null); } });
 
 // ===== ИНСТРУМЕНТЫ / ПАЛИТРА =====
-function clearActive(){ ['t-plat','t-haz','t-spawn','t-erase'].forEach(id=>document.getElementById(id).classList.remove('active'));
+function clearActive(){ ['t-select','t-plat','t-haz','t-spawn','t-erase'].forEach(id=>document.getElementById(id).classList.remove('active'));
   document.querySelectorAll('#palette button').forEach(b=>b.classList.remove('active')); }
 function setTool(t){ tool=t; stamp=null; clearActive(); document.getElementById('t-'+t).classList.add('active'); }
+document.getElementById('t-select').onclick=()=>setTool('select');
 document.getElementById('t-plat').onclick=()=>setTool('plat');
 document.getElementById('t-haz').onclick=()=>setTool('haz');
 document.getElementById('t-spawn').onclick=()=>setTool('spawn');
@@ -282,7 +286,7 @@ document.getElementById('zfit').onclick=()=>{ view.zoom=Math.min((cv.height-2*PA
 function selectPlat(p){ sel=p; document.getElementById('sel-empty').style.display=p?'none':'block';
   document.getElementById('sel-props').style.display=p?'block':'none'; if(p)syncPanel(); }
 function syncPanel(){ if(!sel)return; p_x.value=sel.x;p_y.value=sel.y;p_w.value=sel.w;p_h.value=sel.h;
-  document.getElementById('p-tex').value=sel.tex||''; document.getElementById('p-goal').checked=!!sel.goal; document.getElementById('p-decor').checked=!!sel.decor;
+  document.getElementById('p-tex').value=sel.tex||''; document.getElementById('p-goal').checked=!!sel.goal; document.getElementById('p-decor').checked=!!sel.decor; document.getElementById('p-oneway').checked=!!sel.oneway;
   const r=document.getElementById('reach');
   if(sel.decor){ r.className='hint'; r.textContent='Декорация — без столкновения, прыжок не проверяется.'; return; }
   const below=M().platforms.filter(o=>o!==sel&&!o.decor&&o.y>sel.y&&Math.abs((o.x+o.w/2)-(sel.x+sel.w/2))<280).sort((a,b)=>a.y-b.y)[0];
@@ -296,6 +300,7 @@ const p_x=document.getElementById('p-x'),p_y=document.getElementById('p-y'),p_w=
 [p_x,p_y,p_w,p_h].forEach(i=>i.oninput=()=>{ if(!sel)return; sel.x=+p_x.value;sel.y=+p_y.value;sel.w=+p_w.value;sel.h=+p_h.value; syncPanel(); });
 document.getElementById('p-tex').onchange=e=>{ if(sel)sel.tex=e.target.value||undefined; };
 document.getElementById('p-goal').onchange=e=>{ if(sel)sel.goal=e.target.checked||undefined; };
+document.getElementById('p-oneway').onchange=e=>{ if(sel)sel.oneway=e.target.checked||undefined; };
 document.getElementById('p-decor').onchange=e=>{ if(sel){ sel.decor=e.target.checked||undefined; syncPanel(); } };
 document.getElementById('p-del').onclick=()=>{ if(sel){ M().platforms.splice(M().platforms.indexOf(sel),1); selectPlat(null); } };
 
@@ -319,7 +324,7 @@ document.getElementById('m-del').onclick=()=>{ if(maps.length<2){ alert('Нел�
 
 // ===== ЭКСПОРТ / ИМПОРТ =====
 function mapToText(m){ const plats=m.platforms.map(p=>{ let s=`    { x:${p.x}, y:${p.y}, w:${p.w}, h:${p.h}`;
-  if(p.tex)s+=`, tex:'${p.tex}'`; if(p.decor)s+=`, decor:true`; if(p.goal)s+=`, goal:true`; return s+' }'; }).join(',\n');
+  if(p.tex)s+=`, tex:'${p.tex}'`; if(p.decor)s+=`, decor:true`; if(p.oneway)s+=`, oneway:true`; if(p.goal)s+=`, goal:true`; return s+' }'; }).join(',\n');
   const haz=m.hazards.map(h=>`{ x:${h.x}, y:${h.y} }`).join(', ');
   return `  {\n    name: '${m.name.replace(/'/g,"\\'")}',\n    width: ${m.width}, height: ${m.height},\n    spawn: { x:${m.spawn.x}, y:${m.spawn.y} },\n    goalY: ${m.goalY}, deathY: ${m.deathY},\n    platforms: [\n${plats}\n    ],\n    hazards: [ ${haz} ],\n  }`; }
 function showIO(t,mode){ document.getElementById('io-title').style.display='block'; const io=document.getElementById('io'); io.style.display='block'; io.value=t;
@@ -349,10 +354,10 @@ class TestScene extends Phaser.Scene{ constructor(){ super('test'); }
       else { const col=parseInt(colorOf(p).slice(1),16); const r=this.add.rectangle(p.x,p.y,p.w,p.h,col).setOrigin(0,0);
         if(p.decor){ r.setAlpha(0.7).setDepth(-1); } else this.add.rectangle(p.x,p.y,p.w,4,0x57c23a).setOrigin(0,0); }
       if(p.decor) return;
-      const z=this.add.zone(p.x,p.y,p.w,p.h).setOrigin(0,0); this.physics.add.existing(z,true); z.body.updateFromGameObject(); this.solids.push(z); });
+      const z=this.add.zone(p.x,p.y,p.w,p.h).setOrigin(0,0); this.physics.add.existing(z,true); z.body.updateFromGameObject(); z.oneway=!!p.oneway; this.solids.push(z); });
     this.hz=this.physics.add.staticGroup(); (m.hazards||[]).forEach(h=>{ const c=this.add.circle(h.x,h.y,9,0xff4444); this.physics.add.existing(c,true); c.body.setCircle(9); this.hz.add(c); });
     this.pl=this.physics.add.sprite(m.spawn.x,m.spawn.y,'nj'); this.pl.body.setSize(22,28).setOffset(3,3); this.pl.setMaxVelocity(PH.SPEED,2000);
-    this.physics.add.collider(this.pl,this.solids,null,(pl,plat)=>pl.body.velocity.y>=0 && pl.body.bottom<=plat.body.top+6); this.physics.add.overlap(this.pl,this.hz,()=>this.resp());
+    this.physics.add.collider(this.pl,this.solids,null,(pl,plat)=>{ if(!plat.oneway) return true; return pl.body.velocity.y>=0 && (pl.body.prev.y+pl.body.height)<=plat.body.top+4; }); this.physics.add.overlap(this.pl,this.hz,()=>this.resp());
     this.cameras.main.startFollow(this.pl,true,0.12,0.14); this.cameras.main.setDeadzone(160,90);
     this.k=this.input.keyboard.addKeys('W,A,S,D,SPACE,UP,LEFT,RIGHT'); this.jl=PH.MAX_JUMPS;
     this.ui=this.add.text(10,8,'',{fontFamily:'monospace',fontSize:'18px',color:'#fff',stroke:'#1c2a40',strokeThickness:4}).setScrollFactor(0); }catch(e){ showTestError(e); } }
@@ -375,7 +380,7 @@ function tbind(id,key){ const el=document.getElementById(id);
   ['pointerup','pointercancel','pointerleave'].forEach(ev=>el.addEventListener(ev,e=>{ e.preventDefault(); if(key!=='jump')tctrl[key]=false; })); }
 tbind('tl','left'); tbind('tr','right'); tbind('tj','jump');
 
-renderMapSel(); syncMapPanel(); setTool('plat');
+renderMapSel(); syncMapPanel(); setTool('select');
 </script>
 </body>
 </html>
